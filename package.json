@@ -2,7 +2,6 @@
     "name": "clingy-space-friends",
     "private": true,
     "version": "0.0.0",
-    "description": "An interactive Gaussian-splat spaceship scene: physics, a navmesh, and OrbitControls on a Spark splat.",
     "license": "MIT",
     "author": "Isaac Mason",
     "type": "module",
