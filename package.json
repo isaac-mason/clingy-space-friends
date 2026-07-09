@@ -1,0 +1,50 @@
+{
+    "name": "clingy-space-friends",
+    "private": true,
+    "version": "0.0.0",
+    "description": "An interactive Gaussian-splat spaceship scene: physics, a navmesh, and OrbitControls on a Spark splat.",
+    "license": "MIT",
+    "author": "Isaac Mason",
+    "type": "module",
+    "packageManager": "pnpm@10.32.1",
+    "engines": {
+        "node": ">=24"
+    },
+    "scripts": {
+        "dev": "vite",
+        "build": "tsc && vite build",
+        "preview": "vite preview",
+        "lint": "biome check .",
+        "format": "biome format --write .",
+        "check": "biome check --write .",
+        "build:collider": "tsx scripts/build-collider.ts",
+        "build:navmesh": "tsx scripts/build-navmesh.ts",
+        "bake:probes": "node scripts/bake-probes.mjs"
+    },
+    "pnpm": {
+        "onlyBuiltDependencies": [
+            "esbuild",
+            "webgpu"
+        ]
+    },
+    "devDependencies": {
+        "@biomejs/biome": "2.5.0",
+        "@gltf-transform/core": "^4.4.0",
+        "@playcanvas/splat-transform": "^2.7.0",
+        "@types/node": "^24.13.3",
+        "@types/three": "^0.184.1",
+        "playcanvas": "^2.20.0",
+        "playwright-core": "^1.61.1",
+        "tsx": "^4.22.4",
+        "typescript": "~6.0.2",
+        "vite": "^8.0.12"
+    },
+    "dependencies": {
+        "@sparkjsdev/spark": "^2.1.0",
+        "crashcat": "^0.0.4",
+        "mathcat": "0.0.11",
+        "navcat": "^0.4.1",
+        "packcat": "^0.3.0",
+        "three": "^0.184.0"
+    }
+}
