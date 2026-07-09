@@ -46,6 +46,10 @@ export const AMBIENT_INTENSITY = 0.45;
 export const HEMI_INTENSITY = 0.3;
 export const KEY_LIGHT_INTENSITY = 0.9; // directional key (gives shape/highlights)
 
+// Cap on the renderer device-pixel-ratio. Splats are soft-edged so high DPR buys
+// little; capping cuts Spark's per-pixel sort/blend cost on Retina/hi-DPI screens.
+export const MAX_DPR = 1.5;
+
 // --- Camera framing (world-space) — used by orbit-mode controls ---
 export const CAMERA_POSITION: Vec3 = [-5, 4, 18];
 export const CAMERA_TARGET: Vec3 = [-5, 0.6, -5.5];

@@ -21,6 +21,7 @@ import {
     COLLIDER_URL,
     HEMI_INTENSITY,
     KEY_LIGHT_INTENSITY,
+    MAX_DPR,
     PROBE_INTENSITY,
     PROBE_URL,
     SPLAT_URL,
@@ -58,7 +59,7 @@ function init() {
     // antialias: false is recommended for Spark — MSAA doesn't help splats and costs perf.
     const renderer = new THREE.WebGLRenderer({ antialias: false });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_DPR));
     const app = document.querySelector<HTMLDivElement>('#app') ?? document.body;
     app.appendChild(renderer.domElement);
 
