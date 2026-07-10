@@ -74,7 +74,14 @@ function init() {
     });
     scene.add(spark);
 
-    const splat = new SplatMesh({ url: encodeURI(SPLAT_URL) });
+    // `paged: true` turns the .rad into a streaming source: instead of downloading
+    // the whole 136 MB file before the first frame, SplatMesh becomes a PagedSplats
+    // that fetches only the LOD chunks it needs, on demand, via HTTP Range requests
+    // (the .rad is a single-file, 128-chunk lodTree — offsets, not separate files).
+    // SparkRenderer auto-creates and drives the shared SplatPager each frame; LOD and
+    // page-fetching are on by default. `splat.initialized` resolves immediately here —
+    // it no longer means "fully downloaded", only "wired up" (see the loader below).
+    const splat = new SplatMesh({ url: encodeURI(SPLAT_URL), paged: true });
     scene.add(splat);
 
     // Orbit camera — used only in the debug "orbit camera" mode; starts disabled
@@ -315,14 +322,17 @@ function hideLoading() {
     setTimeout(() => el.remove(), 700); // after the CSS fade
 }
 
-// `splat.initialized` only means the file is decoded — the splats aren't on
-// screen until Spark has sorted them and streamed in the LOD pages. The render
-// loop drives that, and `spark.activeSplats` climbs from 0 as splats become
-// renderable. So we run the loop with the overlay still up and lift it once that
-// count crosses a fraction of the model's total. Expressed as a fraction (not a
-// raw count) so it scales if the asset changes; timeout is a backstop in case
-// frustum culling / LOD plateaus the count below the threshold.
-const SPLAT_READY_FRACTION = 0.8; // lift once this share of the model's splats are rendered
+// With paged streaming, `splat.initialized` resolves before anything is on screen —
+// the LOD pages stream in over the next frames as the render loop drives Spark's
+// pager. `spark.activeSplats` (the LOD-selected subset actually being rendered)
+// climbs from 0 as chunks arrive, then plateaus once the view's LOD budget is filled.
+// We can't compare it against the model's 8.3M total: LOD only ever renders a subset
+// (~2M), so a fraction-of-total check would never fire. Instead we watch for the
+// climb to flatten out — that's "the visible scene has streamed in" — gated by a
+// floor so we don't lift on the first sparse root pages, with a timeout backstop.
+const SPLAT_READY_MIN = 250000; // don't lift until at least this many splats are rendering
+const SPLAT_READY_PLATEAU_GROWTH = 0.02; // "flat" = active grew <2% since the last frame
+const SPLAT_READY_PLATEAU_FRAMES = 30; // ... sustained for this many frames (~0.5s @ 60fps)
 const SPLAT_WAIT_TIMEOUT_MS = 10000; // ... but never keep the loader up longer than this
 
 async function start() {
@@ -334,6 +344,8 @@ async function start() {
 
     let loaderUp = true;
     const startedAt = performance.now();
+    let lastActive = 0;
+    let plateauFrames = 0;
 
     function loop() {
         const now = performance.now();
@@ -344,11 +356,18 @@ async function start() {
 
         if (loaderUp) {
             const active = state.spark.activeSplats;
-            const total = state.splat.numSplats;
-            const ready = total > 0 && active >= total * SPLAT_READY_FRACTION;
+            // Count consecutive frames where the streamed-in count has stopped growing.
+            if (active >= SPLAT_READY_MIN && active <= lastActive * (1 + SPLAT_READY_PLATEAU_GROWTH)) {
+                plateauFrames++;
+            } else {
+                plateauFrames = 0;
+            }
+            lastActive = active;
+
+            const ready = plateauFrames >= SPLAT_READY_PLATEAU_FRAMES;
             if (ready || now - startedAt >= SPLAT_WAIT_TIMEOUT_MS) {
                 loaderUp = false;
-                console.log(`splats ready: ${active}/${total} active${ready ? '' : ' (timed out)'}`);
+                console.log(`splats ready: ${active} streamed in${ready ? '' : ' (timed out)'}`);
                 hideLoading();
             }
         }
