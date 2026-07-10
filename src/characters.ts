@@ -9,8 +9,8 @@ import { addCharacterCollider, moveCharacterCollider, type Physics } from './phy
 export const EMOTES = ['Yes', 'No', 'Dance'];
 
 // Companions that follow the player around the ship. One distinct model each
-// (files in public/characters/<name>.gltf). The visual system
-// (character-visuals.ts) maps these names to the loaded GLTFs.
+// (optimized files in public/characters/<name>.glb, built by pnpm optimize:characters
+// from assets/characters/). The visual system (character-visuals.ts) loads these.
 export const FOLLOWERS = ['George', 'Leela', 'Mike', 'Stan'];
 
 // --- Follower tuning (world units; this ship is ~human-at-half-scale) ---

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 
@@ -57,12 +58,22 @@ export function initCharacterVisuals(scene: THREE.Scene): CharacterVisuals {
 // ends up TARGET_HEIGHT tall. Await before spawning the companions.
 export async function loadCharacterVisuals(visuals: CharacterVisuals): Promise<void> {
     const loader = new GLTFLoader();
+    // The optimized character .glb (pnpm optimize:characters) use EXT_meshopt_compression
+    // for geometry/animation; WebP textures are decoded by the loader natively.
+    loader.setMeshoptDecoder(MeshoptDecoder);
     await Promise.all(
         FOLLOWERS.map(async (name) => {
             try {
-                const gltf = await loader.loadAsync(`${BASE}characters/${name}.gltf`);
+                const gltf = await loader.loadAsync(`${BASE}characters/${name}.glb`);
                 gltf.scene.traverse((o) => {
                     o.frustumCulled = false; // skinned bounds are unreliable -> avoid cull flicker
+                    // Companions cast (and receive each other's) shadows. Set on the
+                    // template so SkeletonUtils.clone carries the flags to every instance.
+                    const mesh = o as THREE.Mesh;
+                    if (mesh.isMesh) {
+                        mesh.castShadow = true;
+                        mesh.receiveShadow = true;
+                    }
                 });
                 const box = new THREE.Box3().setFromObject(gltf.scene);
                 const height = box.max.y - box.min.y || 1;

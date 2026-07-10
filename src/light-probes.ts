@@ -11,6 +11,7 @@ export type ProbeGrid = {
     positions: Vec3[];
     sh: THREE.SphericalHarmonics3[];
     blendRadius: number; // world-space falloff for the inverse-distance blend
+    saturation?: number; // chroma boost already baked into `sh` (undefined / 1 = raw)
 };
 
 export type BakeOptions = {
@@ -20,6 +21,7 @@ export type BakeOptions = {
     hide?: THREE.Object3D[]; // hidden during capture so they don't light themselves
     blendRadius?: number;
     flipY?: boolean; // flip captured faces vertically (GL readback is bottom-up)
+    saturation?: number; // chroma boost to bake into every probe (1 = raw); see saturateSphericalHarmonics
     onProgress?: (done: number, total: number) => void;
 };
 
@@ -109,6 +111,7 @@ export async function bakeProbeGrid(
     const hide = opts.hide ?? [];
     const flipY = opts.flipY ?? true;
     const size = opts.resolution ?? 128;
+    const saturation = opts.saturation ?? 1;
 
     // Hide non-splat meshes for the whole bake so they can't leak into any capture.
     const prevVisible = hide.map((o) => o.visible);
@@ -121,13 +124,17 @@ export async function bakeProbeGrid(
         center.set(p[0], p[1], p[2]);
         const faces = captureCubeFaces(renderer, scene, center, near, far, size);
         const cube = facesToCubeTexture(faces, size, flipY);
-        sh.push(LightProbeGenerator.fromCubeTexture(cube).sh);
+        const probeSh = LightProbeGenerator.fromCubeTexture(cube).sh;
+        // Bake the chroma boost straight into the SH so the shipped grid (and the
+        // debug spheres) already carry it — the runtime then does no per-frame work.
+        saturateSphericalHarmonics(probeSh, saturation);
+        sh.push(probeSh);
         cube.dispose();
         opts.onProgress?.(i + 1, positions.length);
     }
 
     for (let i = 0; i < hide.length; i++) hide[i].visible = prevVisible[i];
-    return { positions, sh, blendRadius: opts.blendRadius ?? 4 };
+    return { positions, sh, blendRadius: opts.blendRadius ?? 4, saturation };
 }
 
 // Exposed for the bake's diagnostic (raw face strip): capture the six faces at a
@@ -150,19 +157,47 @@ export function captureCubeFacesAt(
 export function serializeProbeGrid(grid: ProbeGrid): string {
     return JSON.stringify({
         blendRadius: grid.blendRadius,
+        saturation: grid.saturation,
         positions: grid.positions,
         sh: grid.sh.map((s) => s.coefficients.flatMap((c) => [c.x, c.y, c.z])),
     });
 }
 
 export function deserializeProbeGrid(text: string): ProbeGrid {
-    const d = JSON.parse(text) as { blendRadius: number; positions: Vec3[]; sh: number[][] };
+    const d = JSON.parse(text) as { blendRadius: number; saturation?: number; positions: Vec3[]; sh: number[][] };
     const sh = d.sh.map((arr) => {
         const s = new THREE.SphericalHarmonics3();
         for (let i = 0; i < 9; i++) s.coefficients[i].set(arr[i * 3], arr[i * 3 + 1], arr[i * 3 + 2]);
         return s;
     });
-    return { positions: d.positions, sh, blendRadius: d.blendRadius };
+    return { positions: d.positions, sh, blendRadius: d.blendRadius, saturation: d.saturation };
+}
+
+// Rec.709 luma weights — a colour's perceived brightness, the axis saturation
+// pivots around.
+const LUMA = { x: 0.2126, y: 0.7152, z: 0.0722 };
+const ZERO = new THREE.Vector3(0, 0, 0);
+
+// Push an SH probe's colours away from grey. A diffuse irradiance probe integrates
+// the whole hemisphere, so the ship's grey walls average the localized emissive
+// primaries (magenta glow, cyan panels, plants) down toward grey. Boosting saturation
+// amplifies whatever chroma the probe *did* capture so those colours read on the
+// companions. Exact on SH: the saturation map is linear in RGB, so applying it
+// per-coefficient equals applying it to the final evaluated irradiance.
+// saturation = 1 is a no-op; > 1 boosts. Baked into every grid probe offline (see
+// bakeProbeGrid), so the shipped grid carries it and the runtime does no per-frame work.
+export function saturateSphericalHarmonics(sh: THREE.SphericalHarmonics3, saturation: number): void {
+    if (saturation === 1) return;
+    const coeffs = sh.coefficients;
+    for (const c of coeffs) {
+        const lum = c.x * LUMA.x + c.y * LUMA.y + c.z * LUMA.z;
+        c.x = lum + (c.x - lum) * saturation;
+        c.y = lum + (c.y - lum) * saturation;
+        c.z = lum + (c.z - lum) * saturation;
+    }
+    // Keep the average (DC) irradiance non-negative — a strong boost on a channel far
+    // below the luminance could otherwise push it slightly negative (unphysical).
+    coeffs[0].max(ZERO);
 }
 
 // Blend the grid's probes near (x, y, z) into `out` via compact-support inverse-

@@ -20,12 +20,12 @@ import {
     CAMERA_TARGET,
     COLLIDER_URL,
     HEMI_INTENSITY,
-    KEY_LIGHT_INTENSITY,
     MAX_DPR,
     PROBE_INTENSITY,
     PROBE_URL,
     SPLAT_URL,
 } from './scene';
+import { attachShadowCatcher, initShadows, updateShadows } from './shadows';
 import { castViewRay } from './view-ray';
 import './style.css';
 
@@ -37,11 +37,10 @@ function init() {
     scene.add(new THREE.AmbientLight(0xffffff, AMBIENT_INTENSITY));
     const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x202028, HEMI_INTENSITY);
     scene.add(hemi);
-    // Key light — gives the companions shape/highlights the flat probe irradiance
-    // can't. Angled from above-front; warm to read as ship interior lighting.
-    const keyLight = new THREE.DirectionalLight(0xfff0dc, KEY_LIGHT_INTENSITY);
-    keyLight.position.set(4, 10, 4);
-    scene.add(keyLight);
+    // Key light — gives the companions shape the flat probe irradiance can't. It now
+    // also casts the companions' shadows and follows the player, so it lives in
+    // shadows.ts (created below, once the renderer exists). Same colour/intensity as
+    // before, so the shape lighting is unchanged.
 
     // Runtime irradiance probe fed each frame from the baked probe grid
     // (public/light-probes.json) — lights the companions with the ship's local
@@ -62,6 +61,11 @@ function init() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_DPR));
     const app = document.querySelector<HTMLDivElement>('#app') ?? document.body;
     app.appendChild(renderer.domElement);
+
+    // Enable shadow mapping + the shadow-casting key light (see shadows.ts). Splats
+    // can't receive real shadows, so the companions cast onto an invisible receiver
+    // built from the collider (attached in load()); the frustum follows the player.
+    const shadows = initShadows(scene, renderer);
 
     // SparkRenderer drives splat sorting and LOD streaming/updates for the .rad file.
     // Widen the LOD foveation cone so splats near the screen corners stay full-res
@@ -129,6 +133,7 @@ function init() {
         renderer,
         spark,
         splat,
+        shadows,
         controls,
         perf,
         debug,
@@ -166,6 +171,10 @@ async function load(state: State) {
 
     // Add the scene geometry to the physics world as a static triangle mesh.
     createSplatCollider(state.physics, state.collider);
+
+    // Reuse the same triangle mesh as an invisible shadow receiver, so the
+    // companions' shadows land on the ship floor/walls (splats can't receive them).
+    attachShadowCatcher(state.scene, state.collider);
 
     // Colliders never move — build the debug wireframe once, now that they exist.
     buildColliderDebug(state.debug, state.physics.world);
@@ -250,6 +259,9 @@ function update(state: State, dt: number, _time: number) {
     _playerPos[0] = pf[0];
     _playerPos[1] = pf[1];
     _playerPos[2] = pf[2];
+
+    // Keep the shadow frustum centred on the player so companion shadows stay crisp.
+    updateShadows(state.shadows, pf[0], pf[1], pf[2]);
     updateCharacters(state.characters, state.navigation, state.physics, _playerPos, dt);
     updateCharacterVisuals(state.characterVisuals, state.characters.list, dt);
 

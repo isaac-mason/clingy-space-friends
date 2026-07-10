@@ -35,16 +35,28 @@ export const PROBE_HEIGHTS = [0.4, 1.0, 1.7];
 export const PROBE_KEEP_RADIUS = 0.8;
 // Multiplier on the sampled probe's contribution to the companions' lighting. >1
 // makes the ship's local lighting read more strongly on them (the raw irradiance
-// is fairly dim). Tune to taste vs the ambient/directional fill.
-export const PROBE_INTENSITY = 3.5;
+// is fairly dim). Tune to taste vs the ambient/directional fill. Raised so the
+// probe's coloured, position-varying light dominates over the flat fill below.
+export const PROBE_INTENSITY = 5.5;
+
+// Saturation boost on the probe lighting the companions, baked into the grid by the
+// offline bake (pnpm bake:probes → light-probes.json). The probe averages the whole
+// hemisphere, so the ship's grey surfaces wash the localized emissive primaries
+// (magenta/cyan/green) toward grey; >1 amplifies the captured chroma so those colours
+// read as a companion moves past a light. 1 = raw (dull, greyish); ~2 = punchy.
+// Independent of PROBE_INTENSITY (brightness) — only colourfulness. Change this, then
+// rebake for it to take effect (the committed grid records the value it was baked at).
+export const PROBE_SATURATION = 2.0;
 
 // --- Companion fill lighting (affects the non-splat meshes only; splats are
 // self-lit). Balance these against PROBE_INTENSITY: LOWER the fill so the probe's
 // coloured, position-varying light carries the look; RAISE it for flatter, safer
-// lighting that doesn't depend on the baked grid. ---
-export const AMBIENT_INTENSITY = 0.45;
-export const HEMI_INTENSITY = 0.3;
-export const KEY_LIGHT_INTENSITY = 0.9; // directional key (gives shape/highlights)
+// lighting that doesn't depend on the baked grid. Kept low so the flat ambient
+// doesn't wash out the probe — it's a floor that stops shadowed sides going black,
+// not the main light. ---
+export const AMBIENT_INTENSITY = 0.2;
+export const HEMI_INTENSITY = 0.18;
+export const KEY_LIGHT_INTENSITY = 0.9; // directional key (gives shape/highlights + casts shadows)
 
 // Cap on the renderer device-pixel-ratio. Splats are soft-edged so high DPR buys
 // little; capping cuts Spark's per-pixel sort/blend cost on Retina/hi-DPI screens.

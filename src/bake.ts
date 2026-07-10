@@ -20,7 +20,16 @@ import * as THREE from 'three';
 import { type Collider, unpackCollider } from './collider-schema';
 import { bakeProbeGrid, captureCubeFacesAt, serializeProbeGrid } from './light-probes';
 import { initNavigation, loadNavigation, snapToNavMesh } from './navigation';
-import { COLLIDER_URL, PROBE_HEIGHTS, PROBE_KEEP_RADIUS, PROBE_MAX_XZ, PROBE_MIN_XZ, PROBE_SPACING, SPLAT_URL } from './scene';
+import {
+    COLLIDER_URL,
+    PROBE_HEIGHTS,
+    PROBE_KEEP_RADIUS,
+    PROBE_MAX_XZ,
+    PROBE_MIN_XZ,
+    PROBE_SATURATION,
+    PROBE_SPACING,
+    SPLAT_URL,
+} from './scene';
 
 declare global {
     interface Window {
@@ -121,7 +130,9 @@ async function main(): Promise<void> {
             last = a;
         }
     }
-    console.log(`bake: resident ${spark.activeSplats.toLocaleString()} / ${total.toLocaleString()} (view-culled; per-probe settle covers the rest)`);
+    console.log(
+        `bake: resident ${spark.activeSplats.toLocaleString()} / ${total.toLocaleString()} (view-culled; per-probe settle covers the rest)`,
+    );
 
     // Navmesh drives probe placement (walkable floor only).
     const navigation = initNavigation();
@@ -145,11 +156,11 @@ async function main(): Promise<void> {
     const positions = candidates.filter((_, i) => dists[i] <= PROBE_KEEP_RADIUS);
     // Show how many would survive at a range of radii, so PROBE_KEEP_RADIUS is easy
     // to tune from data.
-    const buckets = [0.4, 0.6, 0.8, 1.0, 1.25, 1.5, 2.0]
-        .map((r) => `${r}m:${dists.filter((d) => d <= r).length}`)
-        .join('  ');
+    const buckets = [0.4, 0.6, 0.8, 1.0, 1.25, 1.5, 2.0].map((r) => `${r}m:${dists.filter((d) => d <= r).length}`).join('  ');
     console.log(`bake: keep-count by radius -> ${buckets}  (of ${candidates.length} candidates)`);
-    console.log(`bake: ${positions.length} probe samples kept at PROBE_KEEP_RADIUS=${PROBE_KEEP_RADIUS}m (${PROBE_HEIGHTS.length} heights)`);
+    console.log(
+        `bake: ${positions.length} probe samples kept at PROBE_KEEP_RADIUS=${PROBE_KEEP_RADIUS}m (${PROBE_HEIGHTS.length} heights)`,
+    );
 
     // Diagnostic: dump the raw six per-face renders of a central probe so we can
     // confirm all six faces are populated + distinct.
@@ -162,9 +173,17 @@ async function main(): Promise<void> {
 
     // Six per-face renderer.render() captures per probe. The blend radius spans the
     // XZ spacing and the vertical layer gap so 3D sampling stays smooth.
-    const grid = await bakeProbeGrid(renderer, scene, positions, { resolution: FACE_SIZE, blendRadius: PROBE_SPACING * 1.6 });
+    // Bake PROBE_SATURATION straight into the grid so the shipped JSON carries the
+    // chroma boost (runtime then tops up to a no-op). Retune it live first, then rebake.
+    const grid = await bakeProbeGrid(renderer, scene, positions, {
+        resolution: FACE_SIZE,
+        blendRadius: PROBE_SPACING * 1.6,
+        saturation: PROBE_SATURATION,
+    });
     const dc = grid.sh.map((sh) => sh.coefficients[0].length());
-    console.log(`bake: done ${grid.positions.length} probes, DC min ${Math.min(...dc).toFixed(3)} max ${Math.max(...dc).toFixed(3)}`);
+    console.log(
+        `bake: done ${grid.positions.length} probes, DC min ${Math.min(...dc).toFixed(3)} max ${Math.max(...dc).toFixed(3)}`,
+    );
 
     const json = serializeProbeGrid(grid);
     if (window.__saveProbes) await window.__saveProbes(json);
