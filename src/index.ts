@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 import { EYE_HEIGHT, initCharacter, updateCharacter } from './character';
-import { initCharacterVisuals, loadCharacterVisuals, updateCharacterVisuals } from './character-visuals';
+import { initCharacterVisuals, loadCharacterVisuals, setCompanionProbe, updateCharacterVisuals } from './character-visuals';
 import { initCharacters, requestCharacterEmote, spawnCharacters, updateCharacters } from './characters';
 import { type Collider, unpackCollider } from './collider-schema';
 import { getMoveDirection, initFirstPersonControls, releaseFirstPersonControls, updateFirstPersonCamera } from './controls';
@@ -42,11 +42,11 @@ function init() {
     // shadows.ts (created below, once the renderer exists). Same colour/intensity as
     // before, so the shape lighting is unchanged.
 
-    // Runtime irradiance probe fed each frame from the baked probe grid
-    // (public/light-probes.json) — lights the companions with the ship's local
-    // lighting. The grid is baked offline (pnpm bake:probes); the app only reads it.
+    // Companions are lit PER-INSTANCE by their own probe SH (injected into each companion's
+    // material — see character-visuals + the update loop), so this scene probe is not a
+    // light: kept at intensity 0 and sampled only to drive the debug readout swatch.
     const envProbe = new THREE.LightProbe();
-    envProbe.intensity = PROBE_INTENSITY;
+    envProbe.intensity = 0;
     scene.add(envProbe);
 
     // Near plane kept well inside the character's HEAD_CLEARANCE so the ceiling never
@@ -206,6 +206,7 @@ async function load(state: State) {
 const _moveDir: Vec3 = [0, 0, 0];
 const _playerPos: Vec3 = [0, 0, 0];
 const _probeColor = new THREE.Color();
+const _companionProbe = new THREE.LightProbe(); // scratch: sampled per companion (not in the scene)
 const INTERACT_RANGE = 2; // metres — how far the interaction view ray reaches
 const SH_Y00 = 0.28209479; // DC SH coeff -> average radiance colour (for the readout)
 
@@ -270,29 +271,16 @@ function update(state: State, dt: number, _time: number) {
         updateCrowdDebug(state.debug, Object.values(state.navigation.crowd.agents));
     }
 
-    // Light the companions from the baked probe grid, sampled in 3D at their
-    // centroid + torso height (they cluster near the player, so one group probe
-    // reads correctly).
+    // Light each companion from the baked probe grid sampled at ITS OWN torso, fed as SH
+    // irradiance into that companion's shader — so it's normal-shaded (like a scene probe)
+    // by the light where it actually stands, not one shared scene probe at the group average.
     if (state.probeGrid) {
-        let cx = 0;
-        let cy = 0;
-        let cz = 0;
-        const list = state.characters.list;
-        for (const ch of list) {
-            cx += ch.position[0];
-            cy += ch.position[1];
-            cz += ch.position[2];
+        for (const ch of state.characters.list) {
+            sampleProbeGrid(state.probeGrid, ch.position[0], ch.position[1] + 0.65, ch.position[2], _companionProbe);
+            setCompanionProbe(state.characterVisuals, ch.id, _companionProbe.sh.coefficients, PROBE_INTENSITY);
         }
-        if (list.length > 0) {
-            cx /= list.length;
-            cy /= list.length;
-            cz /= list.length;
-        } else {
-            cx = _playerPos[0];
-            cy = _playerPos[1];
-            cz = _playerPos[2];
-        }
-        sampleProbeGrid(state.probeGrid, cx, cy + 0.65, cz, state.envProbe); // +torso height
+        // Drive the debug readout swatch from a representative sample at the player.
+        sampleProbeGrid(state.probeGrid, _playerPos[0], _playerPos[1] + 0.65, _playerPos[2], state.envProbe);
     }
 
     if (state.fp.enabled) {
